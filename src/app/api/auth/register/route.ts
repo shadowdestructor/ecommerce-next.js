@@ -45,6 +45,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Send welcome email
+    try {
+      const { EmailService } = await import('@/lib/email');
+      await EmailService.sendWelcomeEmail({
+        email: user.email,
+        name: user.name,
+      });
+    } catch (error) {
+      console.error('Failed to send welcome email:', error);
+    }
+
     return NextResponse.json(
       { message: 'User created successfully', user },
       { status: 201 }

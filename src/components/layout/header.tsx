@@ -43,6 +43,14 @@ export function Header() {
             >
               Categories
             </Link>
+            {session && (
+              <Link
+                href="/orders"
+                className="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium"
+              >
+                My Orders
+              </Link>
+            )}
             <Link
               href="/blog"
               className="text-gray-500 hover:text-gray-900 px-3 py-2 text-sm font-medium"
@@ -123,6 +131,14 @@ export function Header() {
               >
                 Categories
               </Link>
+              {session && (
+                <Link
+                  href="/orders"
+                  className="text-gray-500 hover:text-gray-900 block px-3 py-2 text-base font-medium"
+                >
+                  My Orders
+                </Link>
+              )}
               <Link
                 href="/blog"
                 className="text-gray-500 hover:text-gray-900 block px-3 py-2 text-base font-medium"

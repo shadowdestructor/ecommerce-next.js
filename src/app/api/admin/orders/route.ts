@@ -1,29 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAdmin } from '@/lib/admin';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 
 const ordersQuerySchema = z.object({
   page: z.string().optional().default('1'),
   limit: z.string().optional().default('10'),
-  status: z.enum(['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED']).optional(),
+  status: z.enum(['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED']).optional(),
+  paymentStatus: z.enum(['PENDING', 'PAID', 'FAILED', 'REFUNDED']).optional(),
   search: z.string().optional(),
 });
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    await requireAdmin();
 
     const { searchParams } = new URL(request.url);
     const query = ordersQuerySchema.parse({
       page: searchParams.get('page') || '1',
       limit: searchParams.get('limit') || '10',
       status: searchParams.get('status') || undefined,
+      paymentStatus: searchParams.get('paymentStatus') || undefined,
       search: searchParams.get('search') || undefined,
     });
 
@@ -32,18 +29,26 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
 
     // Build where clause
-    const where: any = {
-      userId: session.user.id,
-    };
+    const where: any = {};
 
     if (query.status) {
       where.status = query.status;
+    }
+
+    if (query.paymentStatus) {
+      where.paymentStatus = query.paymentStatus;
     }
 
     if (query.search) {
       where.OR = [
         {
           orderNumber: {
+            contains: query.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          email: {
             contains: query.search,
             mode: 'insensitive',
           },
@@ -72,6 +77,7 @@ export async function GET(request: NextRequest) {
                 select: {
                   id: true,
                   name: true,
+                  slug: true,
                   images: {
                     take: 1,
                     select: {
@@ -81,6 +87,13 @@ export async function GET(request: NextRequest) {
                   },
                 },
               },
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
             },
           },
         },
@@ -108,6 +121,14 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error fetching orders:', error);
+    
+    if (error instanceof Error && error.message === 'Admin access required') {
+      return NextResponse.json(
+        { error: 'Admin access required' },
+        { status: 403 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Failed to fetch orders' },
       { status: 500 }

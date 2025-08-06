@@ -38,8 +38,19 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // TODO: Send email with reset link
-    // await sendPasswordResetEmail(email, resetToken);
+    // Send password reset email
+    try {
+      const { EmailService } = await import('@/lib/email');
+      const resetLink = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${resetToken}`;
+      
+      await EmailService.sendPasswordResetEmail({
+        email: user.email,
+        name: user.name,
+        resetLink,
+      });
+    } catch (error) {
+      console.error('Failed to send password reset email:', error);
+    }
 
     return NextResponse.json(
       { message: 'If an account with that email exists, we sent a reset link' },

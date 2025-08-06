@@ -82,6 +82,29 @@ export class OrderService {
     // Update inventory
     await this.updateInventoryForOrder(order.items);
 
+    // Send order confirmation email
+    try {
+      const { EmailService } = await import('@/lib/email');
+      await EmailService.sendOrderConfirmation({
+        email: order.user?.email || order.email,
+        orderNumber: order.orderNumber,
+        customerName: order.user?.name || 'Customer',
+        items: order.items.map(item => ({
+          name: item.product.name,
+          quantity: item.quantity,
+          price: Number(item.unitPrice),
+          image: item.product.images[0]?.url,
+        })),
+        subtotal: Number(order.subtotal),
+        tax: Number(order.taxAmount),
+        shipping: Number(order.shippingAmount),
+        total: Number(order.totalAmount),
+        shippingAddress: order.shippingAddress as any,
+      });
+    } catch (error) {
+      console.error('Failed to send order confirmation email:', error);
+    }
+
     return order as OrderWithItems;
   }
 
@@ -298,8 +321,18 @@ export class OrderService {
       },
     });
 
-    // TODO: Send status update email
-    // await EmailService.sendOrderStatusUpdate(order);
+    // Send status update email
+    try {
+      const { EmailService } = await import('@/lib/email');
+      await EmailService.sendOrderStatusUpdate({
+        email: order.user?.email || order.email,
+        orderNumber: order.orderNumber,
+        customerName: order.user?.name || 'Customer',
+        status: status,
+      });
+    } catch (error) {
+      console.error('Failed to send order status update email:', error);
+    }
 
     return order as OrderWithItems;
   }
