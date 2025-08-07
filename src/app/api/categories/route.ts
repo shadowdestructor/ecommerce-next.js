@@ -1,73 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { CategoryService } from '@/services/category';
-import { categoryFiltersSchema, createCategorySchema } from '@/lib/validations/product';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    
-    const filters = {
-      parentId: searchParams.get('parentId') === 'null' ? null : searchParams.get('parentId') || undefined,
-      isActive: searchParams.get('isActive') ? searchParams.get('isActive') === 'true' : undefined,
-      search: searchParams.get('search') || undefined,
-      sortBy: searchParams.get('sortBy') as any || 'sortOrder',
-      sortOrder: searchParams.get('sortOrder') as any || 'asc',
-    };
+    // Get all parent categories (categories without parent)
+    const categories = await prisma.category.findMany({
+      where: {
+        isActive: true,
+        parentId: null // Only parent categories
+      },
+      include: {
+        children: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            _count: {
+              select: {
+                products: {
+                  where: { status: 'ACTIVE' }
+                }
+              }
+            }
+          },
+          orderBy: { sortOrder: 'asc' }
+        },
+        _count: {
+          select: {
+            products: {
+              where: { status: 'ACTIVE' }
+            }
+          }
+        }
+      },
+      orderBy: { sortOrder: 'asc' }
+    });
 
-    const validatedFilters = categoryFiltersSchema.parse(filters);
-    const categories = await CategoryService.getCategories(validatedFilters);
+    // Transform data to include product counts
+    const categoriesWithCounts = categories.map(category => ({
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      imageUrl: category.imageUrl,
+      productCount: category._count.products,
+      children: category.children.map(child => ({
+        id: child.id,
+        name: child.name,
+        slug: child.slug,
+        productCount: child._count.products
+      }))
+    }));
 
     return NextResponse.json({
-      success: true,
-      data: categories,
+      categories: categoriesWithCounts
     });
   } catch (error) {
-    console.error('Categories API error:', error);
+    console.error('Error fetching categories:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch categories' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || session.user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { success: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const body = await request.json();
-    const validatedData = createCategorySchema.parse(body);
-    
-    const category = await CategoryService.createCategory(validatedData);
-
-    return NextResponse.json(
-      {
-        success: true,
-        data: category,
-        message: 'Category created successfully',
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error('Create category error:', error);
-    
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { success: false, error: 'Category with this slug already exists' },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { success: false, error: 'Failed to create category' },
+      { error: 'Kategoriler getirilirken hata oluştu' },
       { status: 500 }
     );
   }

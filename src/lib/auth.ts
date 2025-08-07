@@ -28,6 +28,10 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
+        if (!user.emailVerified) {
+          throw new Error('Email adresinizi doğrulayın');
+        }
+
         const isPasswordValid = await bcrypt.compare(
           credentials.password,
           user.passwordHash
@@ -58,10 +62,34 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.role = user.role;
       }
+      
+      // Handle social login
+      if (account?.provider !== 'credentials' && user) {
+        // Update or create user for social login
+        const existingUser = await prisma.user.findUnique({
+          where: { email: user.email! },
+        });
+
+        if (existingUser) {
+          token.role = existingUser.role;
+        } else {
+          // Create new user for social login
+          const newUser = await prisma.user.create({
+            data: {
+              email: user.email!,
+              name: user.name!,
+              emailVerified: true,
+              role: 'CUSTOMER',
+            },
+          });
+          token.role = newUser.role;
+        }
+      }
+      
       return token;
     },
     async session({ session, token }) {
@@ -73,8 +101,14 @@ export const authOptions: NextAuthOptions = {
     },
   },
   pages: {
-    signIn: '/auth/login',
-    signUp: '/auth/register',
+    signIn: '/login',
+    signUp: '/register',
     error: '/auth/error',
+  },
+  events: {
+    async signIn({ user, account, profile }) {
+      // Log successful sign-ins
+      console.log(`User ${user.email} signed in with ${account?.provider}`);
+    },
   },
 };

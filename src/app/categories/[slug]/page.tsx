@@ -1,169 +1,177 @@
-import { notFound } from 'next/navigation';
-import { MainLayout } from '@/components/layout/main-layout';
-import { ProductList } from '@/components/product/product-list';
-import { ProductFiltersComponent } from '@/components/product/product-filters';
-import { CategoryService } from '@/services/category';
-import { ProductService } from '@/services/product';
-import Link from 'next/link';
+'use client';
 
-interface CategoryPageProps {
-  params: {
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
+import { ProductGrid } from '@/components/product/product-grid';
+import { ProductFilters } from '@/components/product/product-filters';
+import { Product } from '@/types/product';
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  imageUrl?: string;
+  parent?: {
+    id: string;
+    name: string;
     slug: string;
   };
-  searchParams: {
-    [key: string]: string | string[] | undefined;
+  children: Array<{
+    id: string;
+    name: string;
+    slug: string;
+  }>;
+}
+
+interface CategoryPageData {
+  category: Category;
+  products: Product[];
+  filterOptions: {
+    categories: Array<{ id: string; name: string; count: number }>;
+    brands: Array<{ name: string; count: number }>;
+    priceRange: { min: number; max: number };
   };
 }
 
-export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
-  const category = await CategoryService.getCategoryBySlug(params.slug);
+export default function CategoryPage() {
+  const params = useParams();
+  const slug = params.slug as string;
+  
+  const [data, setData] = useState<CategoryPageData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (!category) {
-    notFound();
+  useEffect(() => {
+    const fetchCategoryData = async () => {
+      try {
+        const response = await fetch(`/api/categories/${slug}`);
+        if (response.ok) {
+          const result = await response.json();
+          setData(result);
+        }
+      } catch (error) {
+        console.error('Error fetching category data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (slug) {
+      fetchCategoryData();
+    }
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2 mb-8"></div>
+          <ProductGrid products={[]} loading={true} />
+        </div>
+      </div>
+    );
   }
 
-  // Get breadcrumbs
-  const breadcrumbs = await CategoryService.getBreadcrumbs(category.id);
+  if (!data) {
+    return (
+      <div className="container mx-auto px-4 py-8 text-center">
+        <h1 className="text-2xl font-bold mb-4">Kategori bulunamadı</h1>
+        <p className="text-gray-600">Aradığınız kategori mevcut değil.</p>
+      </div>
+    );
+  }
 
-  // Get initial products for this category
-  const initialProducts = await ProductService.getProducts({
-    categoryId: category.id,
-    page: 1,
-    limit: 12,
-  });
+  const { category, products, filterOptions } = data;
 
   return (
-    <MainLayout>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Breadcrumb */}
-        <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-8">
-          <Link href="/" className="hover:text-gray-700">Home</Link>
-          <span>/</span>
-          <Link href="/categories" className="hover:text-gray-700">Categories</Link>
-          {breadcrumbs.map((crumb, index) => (
-            <div key={crumb.id} className="flex items-center space-x-2">
-              <span>/</span>
-              {index === breadcrumbs.length - 1 ? (
-                <span className="text-gray-900">{crumb.name}</span>
-              ) : (
-                <Link 
-                  href={`/categories/${crumb.slug}`} 
-                  className="hover:text-gray-700"
+    <div className="container mx-auto px-4 py-8">
+      {/* Breadcrumb */}
+      <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-8">
+        <Link href="/" className="hover:text-gray-700">Ana Sayfa</Link>
+        <ChevronRight className="w-4 h-4" />
+        <Link href="/categories" className="hover:text-gray-700">Kategoriler</Link>
+        {category.parent && (
+          <>
+            <ChevronRight className="w-4 h-4" />
+            <Link 
+              href={`/categories/${category.parent.slug}`} 
+              className="hover:text-gray-700"
+            >
+              {category.parent.name}
+            </Link>
+          </>
+        )}
+        <ChevronRight className="w-4 h-4" />
+        <span className="text-gray-900">{category.name}</span>
+      </nav>
+
+      {/* Category Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+          {category.name}
+        </h1>
+        {category.description && (
+          <p className="text-gray-600 text-lg leading-relaxed">
+            {category.description}
+          </p>
+        )}
+        
+        {/* Subcategories */}
+        {category.children.length > 0 && (
+          <div className="mt-6">
+            <h2 className="text-lg font-semibold mb-4">Alt Kategoriler</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {category.children.map((child) => (
+                <Link
+                  key={child.id}
+                  href={`/categories/${child.slug}`}
+                  className="p-4 bg-white border rounded-lg hover:shadow-md transition-shadow text-center"
                 >
-                  {crumb.name}
+                  <h3 className="font-medium text-gray-900">{child.name}</h3>
                 </Link>
-              )}
-            </div>
-          ))}
-        </nav>
-
-        {/* Category Header */}
-        <div className="mb-8">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">
-                {category.name}
-              </h1>
-              {category.description && (
-                <p className="text-gray-600 max-w-3xl">
-                  {category.description}
-                </p>
-              )}
-            </div>
-            {category.imageUrl && (
-              <div className="hidden md:block">
-                <img
-                  src={category.imageUrl}
-                  alt={category.name}
-                  className="w-32 h-32 object-cover rounded-lg"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Subcategories */}
-          {category.children.length > 0 && (
-            <div className="mt-8">
-              <h2 className="text-lg font-semibold mb-4">Subcategories</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {category.children.map((subcategory) => (
-                  <Link
-                    key={subcategory.id}
-                    href={`/categories/${subcategory.slug}`}
-                    className="group"
-                  >
-                    <div className="bg-white border rounded-lg p-4 text-center hover:shadow-md transition-shadow">
-                      {subcategory.imageUrl && (
-                        <div className="aspect-square mb-2 overflow-hidden rounded">
-                          <img
-                            src={subcategory.imageUrl}
-                            alt={subcategory.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
-                        </div>
-                      )}
-                      <h3 className="font-medium text-sm group-hover:text-blue-600 transition-colors">
-                        {subcategory.name}
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {subcategory._count?.products || 0} products
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Products Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Filters Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg border p-6 sticky top-4">
-              <ProductFiltersComponent
-                onFiltersChange={() => {}} // Will be handled by ProductList
-                initialFilters={{ categoryId: category.id }}
-              />
+              ))}
             </div>
           </div>
+        )}
+      </div>
 
-          {/* Products Grid */}
-          <div className="lg:col-span-3">
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-gray-600">
-                {initialProducts.pagination.total} products found
-              </p>
-            </div>
-
-            <ProductList
-              initialProducts={initialProducts.products}
-              filters={{ categoryId: category.id }}
-              showPagination={true}
+      {/* Products Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        {/* Filters Sidebar */}
+        <div className="lg:block hidden">
+          <div className="sticky top-4">
+            <ProductFilters
+              options={filterOptions}
+              onFiltersChange={() => {}}
             />
           </div>
         </div>
+
+        {/* Products Grid */}
+        <div className="lg:col-span-3">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold">
+              Ürünler ({products.length})
+            </h2>
+          </div>
+          
+          <ProductGrid products={products} />
+          
+          {products.length === 0 && (
+            <div className="text-center py-12">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Bu kategoride henüz ürün yok
+              </h3>
+              <p className="text-gray-600">
+                Yakında yeni ürünler eklenecek.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-    </MainLayout>
+    </div>
   );
-}
-
-export async function generateMetadata({ params }: CategoryPageProps) {
-  const category = await CategoryService.getCategoryBySlug(params.slug);
-
-  if (!category) {
-    return {
-      title: 'Category Not Found',
-    };
-  }
-
-  return {
-    title: category.metaTitle || `${category.name} - Shop Now`,
-    description: category.metaDescription || category.description || `Browse our ${category.name} collection`,
-    openGraph: {
-      title: category.name,
-      description: category.description,
-      images: category.imageUrl ? [{ url: category.imageUrl, alt: category.name }] : [],
-    },
-  };
 }

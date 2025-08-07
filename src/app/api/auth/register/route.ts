@@ -2,75 +2,81 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma } from '@/lib/db';
+import { sendVerificationEmail } from '@/lib/email';
+import jwt from 'jsonwebtoken';
 
 const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  name: z.string().min(2, 'İsim en az 2 karakter olmalıdır'),
+  email: z.string().email('Geçerli bir email adresi giriniz'),
+  phone: z.string().optional(),
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalıdır'),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, email, password } = registerSchema.parse(body);
+    const validatedData = registerSchema.parse(body);
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email: validatedData.email },
     });
 
     if (existingUser) {
       return NextResponse.json(
-        { error: 'User with this email already exists' },
+        { error: 'Bu email adresi zaten kullanılıyor' },
         { status: 400 }
       );
     }
 
     // Hash password
-    const passwordHash = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(validatedData.password, 12);
 
     // Create user
     const user = await prisma.user.create({
       data: {
-        name,
-        email,
-        passwordHash,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        createdAt: true,
+        name: validatedData.name,
+        email: validatedData.email,
+        phone: validatedData.phone,
+        passwordHash: hashedPassword,
+        role: 'CUSTOMER',
+        emailVerified: false,
       },
     });
 
-    // Send welcome email
-    try {
-      const { EmailService } = await import('@/lib/email');
-      await EmailService.sendWelcomeEmail({
-        email: user.email,
-        name: user.name,
-      });
-    } catch (error) {
-      console.error('Failed to send welcome email:', error);
-    }
+    // Generate verification token
+    const verificationToken = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.NEXTAUTH_SECRET!,
+      { expiresIn: '24h' }
+    );
+
+    // Send verification email
+    await sendVerificationEmail(user.email, user.name, verificationToken);
 
     return NextResponse.json(
-      { message: 'User created successfully', user },
+      {
+        message: 'Kayıt başarılı! Email adresinizi doğrulayın.',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+        },
+      },
       { status: 201 }
     );
   } catch (error) {
+    console.error('Registration error:', error);
+
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Validation failed', details: error },
+        { error: error.errors[0].message },
         { status: 400 }
       );
     }
 
-    console.error('Registration error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Kayıt işlemi sırasında bir hata oluştu' },
       { status: 500 }
     );
   }

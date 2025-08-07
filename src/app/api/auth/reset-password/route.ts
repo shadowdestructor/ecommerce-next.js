@@ -1,72 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import crypto from 'crypto';
 import { prisma } from '@/lib/db';
+import jwt from 'jsonwebtoken';
 
 const resetPasswordSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  token: z.string(),
+  password: z.string().min(6, 'Şifre en az 6 karakter olmalıdır'),
 });
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email } = resetPasswordSchema.parse(body);
+    const validatedData = resetPasswordSchema.parse(body);
 
-    // Check if user exists
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    // Verify token
+    const decoded = jwt.verify(validatedData.token, process.env.NEXTAUTH_SECRET!) as {
+      userId: string;
+      email: string;
+      type: string;
+    };
 
-    if (!user) {
-      // Don't reveal if user exists or not for security
+    if (decoded.type !== 'password-reset') {
       return NextResponse.json(
-        { message: 'If an account with that email exists, we sent a reset link' },
-        { status: 200 }
-      );
-    }
-
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
-
-    // Store reset token (you might want to create a separate table for this)
-    await prisma.verificationToken.create({
-      data: {
-        identifier: email,
-        token: resetToken,
-        expires: resetTokenExpiry,
-      },
-    });
-
-    // Send password reset email
-    try {
-      const { EmailService } = await import('@/lib/email');
-      const resetLink = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${resetToken}`;
-      
-      await EmailService.sendPasswordResetEmail({
-        email: user.email,
-        name: user.name,
-        resetLink,
-      });
-    } catch (error) {
-      console.error('Failed to send password reset email:', error);
-    }
-
-    return NextResponse.json(
-      { message: 'If an account with that email exists, we sent a reset link' },
-      { status: 200 }
-    );
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Validation failed', details: error.errors },
+        { error: 'Geçersiz token türü' },
         { status: 400 }
       );
     }
 
-    console.error('Password reset error:', error);
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Kullanıcı bulunamadı' },
+        { status: 404 }
+      );
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(validatedData.password, 12);
+
+    // Update user password
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hashedPassword },
+    });
+
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { message: 'Şifreniz başarıyla güncellendi' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Reset password error:', error);
+
+    if (error instanceof jwt.JsonWebTokenError) {
+      return NextResponse.json(
+        { error: 'Geçersiz veya süresi dolmuş token' },
+        { status: 400 }
+      );
+    }
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.errors[0].message },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Şifre sıfırlama sırasında bir hata oluştu' },
       { status: 500 }
     );
   }

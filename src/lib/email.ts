@@ -411,3 +411,65 @@ export class EmailService {
     `;
   }
 }
+/
+/ Convenience functions for backward compatibility
+export async function sendVerificationEmail(email: string, name: string, token: string) {
+  const verificationUrl = `${process.env.NEXTAUTH_URL}/api/auth/verify-email?token=${token}`;
+  
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Email Doğrulama</title>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎉 Hoş Geldiniz!</h1>
+          </div>
+          <div class="content">
+            <h2>Merhaba ${name},</h2>
+            <p>E-ticaret platformumuza kayıt olduğunuz için teşekkür ederiz! Hesabınızı aktifleştirmek için aşağıdaki butona tıklayın:</p>
+            
+            <div style="text-align: center;">
+              <a href="${verificationUrl}" class="button">Email Adresimi Doğrula</a>
+            </div>
+            
+            <p>Eğer buton çalışmıyorsa, aşağıdaki linki tarayıcınıza kopyalayabilirsiniz:</p>
+            <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${verificationUrl}</p>
+            
+            <p><strong>Not:</strong> Bu link 24 saat geçerlidir.</p>
+          </div>
+          <div class="footer">
+            <p>Bu email otomatik olarak gönderilmiştir. Lütfen yanıtlamayın.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  return EmailService.sendEmail({
+    to: email,
+    subject: '📧 Email Adresinizi Doğrulayın',
+    html,
+  });
+}
+
+export async function sendPasswordResetEmail(email: string, name: string, token: string) {
+  const resetUrl = `${process.env.NEXTAUTH_URL}/reset-password?token=${token}`;
+  
+  return EmailService.sendPasswordResetEmail({
+    email,
+    name,
+    resetLink: resetUrl,
+  });
+}
